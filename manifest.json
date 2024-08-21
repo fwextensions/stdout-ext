@@ -1,0 +1,6 @@
+{
+  "name": "stdout",
+  "manifest_version": 3,
+  "version": "0.0.0",
+  "action": { "default_popup": "index.html" }
+}

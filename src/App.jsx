@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
+import { Console } from "console-feed";
 import "./App.css";
-import Console from "./Console.jsx";
 
 export default function App()
 {
-	const [output, setOutput] = useState("");
+	const [logs, setLogs] = useState([]);
 
 	const handleMessage = useCallback((message, sender) => {
-		if (message.data) {
-			setOutput((output) => output + `${sender.id}: ${message.data}\n`);
+		const { method, data } = message;
+
+		if (data) {
+			setLogs((currentLogs) => [...currentLogs, { method, data }]);
 		}
 	}, []);
 
@@ -19,6 +21,6 @@ export default function App()
 	}, []);
 
 	return (
-		<Console output={output} />
+		<Console logs={logs} />
 	);
 }

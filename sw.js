@@ -12,16 +12,17 @@ function handleMessage(
 
 	if (typeof console[method] === "function" && args?.length) {
 		const [firstArg, ...rest] = args;
-		let outputArgs = ["%c%s", FilenameStyle, filename, firstArg, ...rest];
+		let outputArgs = ["%c%s", FilenameStyle, filename, ...args];
 
 		if (SubstitutionPattern.test(firstArg) && rest.length) {
 				// firstArg contains a string substitution and there are additional args
-				// that can be substituted in.  (a string with a % in it with no following
+				// that can be substituted in.  (a string with a % in it but no following
 				// args, like "Pct light speed (%c)", wouldn't trigger a substitution.)
 				// that firstArg has to be in the first argument to work, so add a style
-				// reset substitution to our initial string and then concat the first
-				// arg from the message.  then pass in the filename style, the filename,
-				// and the reset style, and finally the rest of the message args.
+				// reset substitution to our initial string (the second %c) and then
+				// concat the first arg from the message.  then pass in the filename
+				// style, the filename, and the reset style, and finally the rest of
+				// the message args.
 			outputArgs = [
 				"%c%s%c " + firstArg,
 				FilenameStyle,
@@ -31,7 +32,7 @@ function handleMessage(
 			];
 		}
 
-		console[method].apply(console, outputArgs);
+		console[method](...outputArgs);
 	}
 
 		// if we don't call sendResponse(), Chrome will keep the calling service worker

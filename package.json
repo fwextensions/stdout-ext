@@ -1,5 +1,23 @@
 {
-  "name": "stdout",
+  "name": "stdout-ext",
   "version": "0.0.0",
+  "description": "Simple Chrome extension for showing console logs from *other* Chrome extensions",
+  "keywords": [
+    "chrome",
+    "extension",
+    "service worker",
+    "manifest v3",
+    "console"
+  ],
+  "author": "John Dunning",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fwextensions/stdout-ext.git"
+  },
+  "bugs": {
+    "url": "https://github.com/fwextensions/stdout-ext/issues"
+  },
+  "homepage": "https://github.com/fwextensions/stdout-ext#readme",
   "module": "true"
 }

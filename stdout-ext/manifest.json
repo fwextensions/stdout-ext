@@ -2,6 +2,12 @@
   "name": "stdout",
   "manifest_version": 3,
   "version": "0.0.0",
+  "icons": {
+    "16": "img/icon-16.png",
+    "48": "img/icon-48.png",
+    "64": "img/icon-64.png",
+    "128": "img/icon-128.png"
+  },
   "background": {
     "service_worker": "sw.js"
   }

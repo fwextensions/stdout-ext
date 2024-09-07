@@ -3,6 +3,8 @@ const ResetStyle = "color: initial";
 	// ignore %%, which escapes the % character
 const SubstitutionPattern = /%[^%]/;
 
+const senderIDs = new Set();
+
 function handleMessage(
 	message,
 	sender,
@@ -10,9 +12,12 @@ function handleMessage(
 {
 	const { method, filename, args } = message;
 
+	senderIDs.add(sender.id);
+
 	if (typeof console[method] === "function" && args?.length) {
 		const [firstArg, ...rest] = args;
-		let outputArgs = ["%c%s", FilenameStyle, filename, ...args];
+		const senderInfo = (senderIDs.size > 1 ? sender.id.slice(0, 4) + " " : "") + filename;
+		let outputArgs = ["%c%s", FilenameStyle, senderInfo, ...args];
 
 		if (SubstitutionPattern.test(firstArg) && rest.length) {
 				// firstArg contains a string substitution and there are additional args
@@ -26,7 +31,7 @@ function handleMessage(
 			outputArgs = [
 				"%c%s%c " + firstArg,
 				FilenameStyle,
-				filename,
+				senderInfo,
 				ResetStyle,
 				...rest
 			];

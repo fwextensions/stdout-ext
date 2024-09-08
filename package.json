@@ -19,5 +19,23 @@
     "url": "https://github.com/fwextensions/stdout-ext/issues"
   },
   "homepage": "https://github.com/fwextensions/stdout-ext#readme",
-  "module": "true"
+  "type": "module",
+  "files": [
+    "lib/stdout.js",
+    "types/stdout.d.ts",
+    "stdout-ext"
+  ],
+  "exports": {
+    ".": {
+      "import": "./lib/stdout.js",
+      "types": "./types/stdout.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
 }

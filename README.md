@@ -2,7 +2,7 @@
 
 # stdout-ext
 
-> A simple Chrome extension for showing console logs from *other* Chrome extensions
+> A simple Chrome extension for console-logging *other* Chrome extensions
 
 
 ## Why?

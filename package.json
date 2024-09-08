@@ -1,7 +1,7 @@
 {
   "name": "stdout-ext",
   "version": "0.0.0",
-  "description": "Simple Chrome extension for showing console logs from *other* Chrome extensions",
+  "description": "A simple Chrome extension for showing console logs from *other* Chrome extensions",
   "keywords": [
     "chrome",
     "extension",

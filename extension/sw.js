@@ -31,7 +31,7 @@ function handleMessage(
 
 	senderIDs.add(sender.id);
 
-	if (typeof console[method] === "function" && args?.length) {
+	if (typeof console[method] === "function") {
 		const [firstArg, ...rest] = args;
 		const senderInfo = (senderIDs.size > 1 ? sender.id.slice(0, 4) + " " : "") + filename;
 		let outputArgs = ["%c%s", FilenameStyle, senderInfo, ...args.map(convertError)];

@@ -5,6 +5,23 @@ const SubstitutionPattern = /%[^%]/;
 
 const senderIDs = new Set();
 
+function convertError(
+	value)
+{
+	if (value?.__type === "Error") {
+		const { __type, message, name, stack, ...rest } = value;
+		const err = new Error(message);
+
+			// reconstruct the error object that was sent through runtime.sendMessage()
+			// as best we can
+		Object.assign(err, { name, stack, ...rest });
+
+		return err;
+	}
+
+	return value;
+}
+
 function handleMessage(
 	message,
 	sender,
@@ -17,7 +34,7 @@ function handleMessage(
 	if (typeof console[method] === "function" && args?.length) {
 		const [firstArg, ...rest] = args;
 		const senderInfo = (senderIDs.size > 1 ? sender.id.slice(0, 4) + " " : "") + filename;
-		let outputArgs = ["%c%s", FilenameStyle, senderInfo, ...args];
+		let outputArgs = ["%c%s", FilenameStyle, senderInfo, ...args.map(convertError)];
 
 		if (SubstitutionPattern.test(firstArg) && rest.length) {
 				// firstArg contains a string substitution and there are additional args
@@ -33,7 +50,7 @@ function handleMessage(
 				FilenameStyle,
 				senderInfo,
 				ResetStyle,
-				...rest
+				...rest.map(convertError)
 			];
 		}
 

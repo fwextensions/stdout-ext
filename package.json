@@ -23,7 +23,7 @@
   "files": [
     "lib/stdout.js",
     "types/stdout.d.ts",
-    "stdout-ext"
+    "extension"
   ],
   "exports": {
     ".": {

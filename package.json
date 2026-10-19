@@ -1,13 +1,14 @@
 {
   "name": "stdout-ext",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "description": "A simple Chrome extension for console-logging *other* Chrome extensions",
   "keywords": [
     "chrome",
     "extension",
     "service worker",
     "manifest v3",
-    "console"
+    "console",
+    "mcp"
   ],
   "author": "John Dunning",
   "license": "MIT",
@@ -23,7 +24,8 @@
   "files": [
     "lib/stdout.js",
     "types/stdout.d.ts",
-    "extension"
+    "extension",
+    "mcp"
   ],
   "exports": {
     ".": {
@@ -33,7 +35,18 @@
   },
   "scripts": {
     "build": "tsc",
+    "test": "node --test",
     "prepublishOnly": "npm run build"
+  },
+  "bin": {
+    "stdout-ext-mcp": "mcp/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "typescript": "^5.5.4"

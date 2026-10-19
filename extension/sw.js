@@ -1,3 +1,7 @@
+import { addEntry } from "./buffer.js";
+import { fromJSONSafe } from "./deserialize.js";
+import { handleAlarm, handleStorageChange, restoreAgentMode, scheduleFlush, toggleAgentMode } from "./sync.js";
+
 const FilenameStyle = "color: light-dark(#aaa, #888)";
 const ResetStyle = "color: initial";
 	// ignore %%, which escapes the % character
@@ -5,36 +9,39 @@ const SubstitutionPattern = /%[^%]/;
 
 const senderIDs = new Set();
 
-function convertError(
-	value)
-{
-	if (value?.__type === "Error") {
-		const { __type, message, name, stack, ...rest } = value;
-		const err = new Error(message);
-
-			// reconstruct the error object that was sent through runtime.sendMessage()
-			// as best we can
-		Object.assign(err, { name, stack, ...rest });
-
-		return err;
-	}
-
-	return value;
-}
-
 function handleMessage(
 	message,
 	sender,
 	sendResponse)
 {
-	const { method, filename, args } = message;
+	const { method, filename, args, time = Date.now(), name } = message;
 
 	senderIDs.add(sender.id);
+
+	if (!Array.isArray(args)) {
+		sendResponse(false);
+
+		return;
+	}
+
+		// store every message, whether or not agent mode is on, so that an agent
+		// can see what happened before it connected.  the args arrive as JSON, so
+		// they can be stored and sent on as is.
+	addEntry({
+		time,
+		extensionId: sender.id,
+		extensionName: name,
+		filename,
+		method,
+		args,
+	})
+		.then(scheduleFlush)
+		.catch((error) => console.error("stdout: couldn't store log entry", error));
 
 	if (typeof console[method] === "function") {
 		const [firstArg, ...rest] = args;
 		const senderInfo = (senderIDs.size > 1 ? sender.id.slice(0, 4) + " " : "") + filename;
-		let outputArgs = ["%c%s", FilenameStyle, senderInfo, ...args.map(convertError)];
+		let outputArgs = ["%c%s", FilenameStyle, senderInfo, ...args.map(fromJSONSafe)];
 
 		if (SubstitutionPattern.test(firstArg) && rest.length) {
 				// firstArg contains a string substitution and there are additional args
@@ -50,7 +57,7 @@ function handleMessage(
 				FilenameStyle,
 				senderInfo,
 				ResetStyle,
-				...rest.map(convertError)
+				...rest.map(fromJSONSafe)
 			];
 		}
 
@@ -64,3 +71,8 @@ function handleMessage(
 }
 
 chrome.runtime.onMessageExternal.addListener(handleMessage);
+chrome.action.onClicked.addListener(toggleAgentMode);
+chrome.storage.onChanged.addListener(handleStorageChange);
+chrome.alarms.onAlarm.addListener(handleAlarm);
+chrome.runtime.onStartup.addListener(restoreAgentMode);
+chrome.runtime.onInstalled.addListener(restoreAgentMode);

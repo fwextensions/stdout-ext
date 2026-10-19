@@ -22,16 +22,18 @@ After installing the package, you'll need to add the unpacked `stdout` extension
 
 Once `stdout` is running, click its <u>service worker</u> link to open the devtools window.  This is where any console output from your extension will be displayed.
 
+You can also let a coding agent read the output directly.  See [Reading logs from a coding agent](#reading-logs-from-a-coding-agent).
+
 
 ## Usage
 
-To send logs from your extension, import `stdout()` from the package and call it with the `stdout` extension ID, which you can get from the Chrome Extensions window.  (The exact ID will be unique to your local installation.)
+To send logs from your extension, import `stdout()` from the package and call it with the `stdout` extension ID.  The ID is fixed by the extension's manifest, so it's always `lnkfeennpkaoelponfafleomlmgjfjok`, which the package exports as `STDOUT_ID`.  (Versions before 0.1.0 had no fixed ID, so if you upgrade, replace the ID you used before.)
 
 ```js
 // service-worker.js
-import stdout from "stdout-ext";
+import stdout, { STDOUT_ID } from "stdout-ext";
 
-stdout("<ID for the unpacked stdout extension>");
+stdout(STDOUT_ID);
 console.log("my important message", { hello: "world" });
 ```
 
@@ -69,6 +71,55 @@ stdout({ id: "...", filename: "background" });
 // popup.html
 stdout({ id: "...", filename: "toolbar" });
 ```
+
+
+## Reading logs from a coding agent
+
+The package includes an [MCP](https://modelcontextprotocol.io) server, `stdout-ext-mcp`, that lets a coding agent like Claude Code read your extension's console output.  It needs no other changes to your extension.
+
+The `stdout` extension stores the last 10,000 log messages it receives, whether or not an agent is connected.  So when you notice something going wrong and start an agent session, the agent can see what was logged beforehand.
+
+
+### Setup
+
+Add the server to your agent's MCP configuration.  For Claude Code, run this in your extension's project:
+
+```shell
+claude mcp add stdout -- npx stdout-ext-mcp
+```
+
+Or add it to the project's `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "stdout": {
+      "command": "npx",
+      "args": ["stdout-ext-mcp"]
+    }
+  }
+}
+```
+
+The agent starts the server when it needs it.  The server starts a small background process on port 47321 that holds the logs and is shared by all agent sessions.  It exits after two hours without use.
+
+
+### Agent mode
+
+To let `stdout` send its logs to the server, click the `stdout` icon in Chrome's toolbar.  (You may need to pin it from the Extensions menu first.)  The icon shows an **MCP** badge while agent mode is on.  The badge is green when the server has received the logs and gray while `stdout` is waiting for a server to start.
+
+While agent mode is on, `stdout` sends new log messages to the server as they arrive.  It also checks for the server once a minute, so a newly started agent session gets the stored logs within about a minute.  These checks wake the `stdout` service worker briefly but don't keep it running.
+
+Click the icon again to turn agent mode off.  The logs are still stored and shown in the `stdout` console, but nothing is sent to the server.
+
+
+### Tools
+
+| Tool | Description |
+|------|-------------|
+| `get_logs` | Returns the most recent log messages, or the messages after a cursor from a previous call.  Can filter by level, extension, filename, or a regular expression. |
+| `wait_for_log` | Waits for a new log message that matches a regular expression, such as after the agent asks you to reproduce a problem. |
+| `list_sources` | Lists the extensions and pages that have sent logs, and when `stdout` last connected. |
 
 
 ## License

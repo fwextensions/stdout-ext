@@ -1,18 +1,23 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { ExtensionOrigin, IdleTimeout, Port } from "./constants.js";
 import { LogStore } from "./store.js";
+import { createMcpServer } from "./tools.js";
+import { getCodeVersion } from "./version.js";
 
 	// the stdout extension sends up to 500 entries per request
 const MaxBodySize = 16 * 1024 * 1024;
-const MaxWaitTime = 120 * 1000;
+	// returned by route() when it has already sent the response
+const Handled = Symbol("handled");
 
 const store = new LogStore();
 const bootId = randomUUID();
+const codeVersion = getCodeVersion();
 const startedAt = Date.now();
 const allowedHosts = new Set([`127.0.0.1:${Port}`, `localhost:${Port}`]);
 let lastActivity = Date.now();
-let activeWaits = 0;
+let activeRequests = 0;
 
 class HTTPError extends Error
 {
@@ -59,11 +64,40 @@ function getStatus()
 		status: "ok",
 		pid: process.pid,
 		bootId,
+		codeVersion,
 		startedAt,
 		lastIngestAt: store.lastIngestAt,
 		maxSeq: store.maxSeq,
 		entryCount: store.entries.length,
 	};
+}
+
+async function handleMCP(
+	req,
+	res,
+	body)
+{
+		// each request gets its own server and transport, since the MCP servers
+		// relaying requests here don't keep a session.  the abort signal stops a
+		// wait_for_log when the agent session that called it goes away.
+	const controller = new AbortController();
+	const server = createMcpServer({ store, getStatus, signal: controller.signal });
+	const transport = new StreamableHTTPServerTransport({
+		sessionIdGenerator: undefined,
+		enableJsonResponse: true,
+	});
+
+	activeRequests++;
+	res.on("close", () => {
+		controller.abort();
+		transport.close();
+		server.close();
+		activeRequests--;
+		lastActivity = Date.now();
+	});
+
+	await server.connect(transport);
+	await transport.handleRequest(req, res, body);
 }
 
 async function route(
@@ -100,40 +134,16 @@ async function route(
 		return getStatus();
 	}
 
-	if (method === "GET" && url === "/sources") {
-		return { ...getStatus(), sources: store.getSources() };
+	if (method === "POST" && url === "/mcp") {
+		await handleMCP(req, res, await readJSON(req));
+
+		return Handled;
 	}
 
-	if (method === "POST" && url === "/query") {
-		const { after, around, limit, filter } = await readJSON(req);
-
-		return { ...getStatus(), ...store.query({ after, around, limit, filter }) };
-	}
-
-	if (method === "POST" && url === "/mark") {
-		const { label } = await readJSON(req);
-
-		return { ...store.addMark(String(label)), ...getStatus() };
-	}
-
-	if (method === "POST" && url === "/wait") {
-		const { after, limit, filter, timeoutMs = 30000 } = await readJSON(req);
-		const { promise, cancel } = store.wait({
-			after,
-			limit,
-			filter,
-			timeoutMs: Math.min(Math.max(timeoutMs, 0), MaxWaitTime),
-		});
-
-		activeWaits++;
-		res.on("close", cancel);
-
-		try {
-			return { ...await promise, ...getStatus() };
-		} finally {
-			activeWaits--;
-			lastActivity = Date.now();
-		}
+	if (url === "/mcp") {
+			// without sessions, there's no stream of server messages to GET and no
+			// session to DELETE.  MCP clients expect a 405 for these.
+		throw new HTTPError(405, "Method not allowed");
 	}
 
 	throw new HTTPError(404, "Not found");
@@ -151,7 +161,7 @@ const server = createServer(async (req, res) => {
 		body = { error: error.message };
 	}
 
-	if (!res.destroyed) {
+	if (body !== Handled && !res.destroyed) {
 		res.writeHead(status, { "Content-Type": "application/json" });
 		res.end(JSON.stringify(body));
 	}
@@ -165,7 +175,7 @@ server.on("error", (error) => {
 server.listen(Port, "127.0.0.1");
 
 setInterval(() => {
-	if (!activeWaits && Date.now() - lastActivity > IdleTimeout) {
+	if (!activeRequests && Date.now() - lastActivity > IdleTimeout) {
 		process.exit(0);
 	}
 }, Math.min(IdleTimeout, 60 * 1000));

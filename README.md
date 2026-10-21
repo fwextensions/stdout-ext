@@ -101,7 +101,9 @@ Or add it to the project's `.mcp.json`:
 }
 ```
 
-The agent starts the server when it needs it.  The server starts a small background process on port 47321 that holds the logs and is shared by all agent sessions.  It exits after two hours without use.
+The agent starts the server when it needs it.  The server starts a small background process on port 47321 that holds the logs, runs the tools, and is shared by all agent sessions.  Each session's server only passes messages to it.  The background process exits after two hours without use.
+
+If the background process was started from an older version of the code, the next agent session to start replaces it.  Sessions that are already open then use the new one.  The `stdout` extension then resends its stored logs within about a minute.
 
 
 ### Agent mode
@@ -122,7 +124,7 @@ Click the icon again to turn agent mode off.  The logs are still stored and show
 | `mark` | Adds a line to the log, such as before the agent asks you to reproduce a problem, so the messages that follow are easy to find. |
 | `list_sources` | Lists the extensions and pages that have sent logs, and when `stdout` last connected. |
 
-Each message shows the time since the previous one, like `+251ms`.  A `loaded` line marks the first message from each page load, so you can see when a service worker restarted or a popup was reopened.  These lines need the version of `stdout-ext` that sends a page-load ID.
+Times are shown in your local time zone, like in the `stdout` console, and each message shows the time since the previous one, like `+251ms`.  A `loaded` line marks the first message from each page load, so you can see when a service worker restarted or a popup was reopened.  These lines need the version of `stdout-ext` that sends a page-load ID.
 
 
 ## License

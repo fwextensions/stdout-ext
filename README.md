@@ -117,9 +117,12 @@ Click the icon again to turn agent mode off.  The logs are still stored and show
 
 | Tool | Description |
 |------|-------------|
-| `get_logs` | Returns the most recent log messages, or the messages after a cursor from a previous call.  Can filter by level, extension, filename, or a regular expression. |
+| `get_logs` | Returns the most recent log messages, the messages after a cursor from a previous call, or the messages around a given one.  Can filter by level, extension, filename, a regular expression, or how recent the messages are, like `10m`. |
 | `wait_for_log` | Waits for a new log message that matches a regular expression, such as after the agent asks you to reproduce a problem. |
+| `mark` | Adds a line to the log, such as before the agent asks you to reproduce a problem, so the messages that follow are easy to find. |
 | `list_sources` | Lists the extensions and pages that have sent logs, and when `stdout` last connected. |
+
+Each message shows the time since the previous one, like `+251ms`.  A `loaded` line marks the first message from each page load, so you can see when a service worker restarted or a popup was reopened.  These lines need the version of `stdout-ext` that sends a page-load ID.
 
 
 ## License

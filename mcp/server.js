@@ -19,8 +19,13 @@ session started are available.
 
 Start with get_logs to see recent output, or list_sources to see which \
 extensions and pages have logged. Every result includes a cursor; pass it as \
-\`after\` to get only newer entries. After asking the user to reproduce a \
-problem, use wait_for_log to wait for a specific message.
+\`after\` to get only newer entries. Use \`since\` to limit results to a recent \
+time span, or \`around\` to see the entries near one you found. Each entry \
+shows the time since the previous one, and a "loaded" line marks the first \
+entry from each page load, such as a service worker restart.
+
+Before asking the user to reproduce a problem, call mark to add a line that \
+brackets the repro. Then use wait_for_log to wait for a specific message.
 
 If the tools report that the stdout extension hasn't sent anything, ask the \
 user to click the stdout extension's toolbar icon in Chrome so it shows an MCP \
@@ -35,7 +40,11 @@ const filterShape = {
 		.describe('Only include logs from pages or scripts whose filename contains this, like "popup".'),
 	search: z.string().optional()
 		.describe("Case-insensitive regular expression to match against the message text."),
+	since: z.string().optional()
+		.describe('Only include entries from this long ago or later, like "30s", "10m" or "2h", or from an ISO timestamp.'),
 };
+const DurationPattern = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)$/i;
+const DurationUnits = { ms: 1, s: 1000, m: 60 * 1000, h: 60 * 60 * 1000, d: 24 * 60 * 60 * 1000 };
 
 async function request(
 	path,
@@ -122,14 +131,73 @@ function formatAge(
 	return seconds < 120 ? `${seconds} seconds ago` : `${Math.round(seconds / 60)} minutes ago`;
 }
 
-function formatEntry(
-	{ seq, time, method, extensionId, extensionName, filename, text })
+function formatDelta(
+	ms)
 {
+	const sign = ms < 0 ? "-" : "+";
+
+	ms = Math.abs(ms);
+
+	if (ms < 1000) {
+		return `${sign}${ms}ms`;
+	}
+
+	if (ms < 60 * 1000) {
+		return `${sign}${(ms / 1000).toFixed(1)}s`;
+	}
+
+	const seconds = Math.round(ms / 1000);
+
+	return `${sign}${Math.floor(seconds / 60)}m${seconds % 60}s`;
+}
+
+function formatEntry(
+	{ seq, time, method, extensionId, extensionName, filename, text, mark, newLoad },
+	previousTime)
+{
+		// show how long it's been since the previous line, which is what matters
+		// when debugging timing problems
+	const delta = previousTime && time ? ` ${formatDelta(time - previousTime)}` : "";
+	const prefix = `#${seq} ${formatTime(time)}${delta}`;
+
+	if (mark) {
+		return `${prefix} --- mark: ${text} ---`;
+	}
+
 	const source = `${extensionName ?? extensionId}/${filename}`;
 		// indent continuation lines, like stack traces, under the entry
 	const body = text.replaceAll("\n", "\n    ");
+	const line = `${prefix} [${method}] ${source}: ${body}`;
 
-	return `#${seq} ${formatTime(time)} [${method}] ${source}: ${body}`;
+	return newLoad ? `--- ${source} loaded ---\n${line}` : line;
+}
+
+function formatEntries(
+	entries)
+{
+	return entries.map((entry, i) => formatEntry(entry, entries[i - 1]?.time)).join("\n");
+}
+
+function parseSince(
+	since)
+{
+	if (!since) {
+		return undefined;
+	}
+
+	const [, amount, unit] = since.trim().match(DurationPattern) ?? [];
+
+	if (amount) {
+		return Date.now() - amount * DurationUnits[unit.toLowerCase()];
+	}
+
+	const time = Date.parse(since);
+
+	if (Number.isNaN(time)) {
+		throw new Error(`Invalid since value: "${since}". Use a duration like "10m" or an ISO timestamp.`);
+	}
+
+	return time;
 }
 
 function getConnectionNote(
@@ -190,31 +258,38 @@ server.registerTool(
 		description: "Get console output from Chrome extensions that use the stdout-ext library, "
 			+ "including output from before this session started. Without `after`, returns the most "
 			+ "recent matching entries. With `after`, returns the entries following that cursor, "
-			+ "oldest first.",
+			+ "oldest first. With `around`, returns the entries before and after that one.",
 		inputSchema: {
 			after: z.number().int().optional()
 				.describe("Cursor from a previous result. Only entries after it are returned."),
+			around: z.number().int().optional()
+				.describe("Entry number to center the results on, such as one found with `search`. "
+					+ "Filters apply to the entries around it."),
 			limit: z.number().int().min(1).max(1000).optional()
-				.describe("Maximum number of entries to return. Defaults to 100."),
+				.describe("Maximum number of entries to return. Defaults to 100, or 21 with `around`."),
 			...filterShape,
 		},
 		annotations: { readOnlyHint: true },
 	},
-	async ({ after, limit = 100, ...filter }) => {
+	async ({ after, around, limit = around === undefined ? 100 : 21, since, ...filter }) => {
 		try {
 			validateSearch(filter.search);
+			filter.since = parseSince(since);
 			await ensureDaemon();
 
-			const result = await request("/query", { after, limit, filter });
-			const lines = result.entries.map(formatEntry);
+			const result = await request("/query", { after, around, limit, filter });
+			const { entries } = result;
 				// paging forward stops at the limit, so continue from the last entry.
 				// otherwise, every entry up to maxSeq has been considered.
-			const hasMore = after !== undefined && !result.cursorReset && lines.length === limit;
-			const cursor = hasMore ? result.entries.at(-1).seq : result.maxSeq;
+			const hasMore = after !== undefined && around === undefined
+				&& !result.cursorReset && entries.length === limit;
+			const cursor = hasMore || (around !== undefined && entries.length)
+				? entries.at(-1).seq
+				: result.maxSeq;
 
 			return textResult(
 				result.cursorReset && "The stdout extension's log buffer was reset, so the cursor no longer applies. These are the latest entries.",
-				lines.length ? lines.join("\n") : "No matching log entries.",
+				entries.length ? formatEntries(entries) : "No matching log entries.",
 				hasMore && "There may be more entries after these.",
 				`cursor: ${cursor} (pass as \`after\` to get only newer entries)`,
 				getConnectionNote(result)
@@ -261,9 +336,38 @@ server.registerTool(
 			return textResult(
 				result.timedOut
 					? `No matching log entry within ${timeoutSeconds} seconds.`
-					: result.entries.map(formatEntry).join("\n"),
+					: formatEntries(result.entries),
 				`cursor: ${cursor} (pass as \`after\` to get only newer entries)`,
 				getConnectionNote(result)
+			);
+		} catch (error) {
+			return errorResult(error);
+		}
+	}
+);
+
+server.registerTool(
+	"mark",
+	{
+		title: "Mark the log",
+		description: "Add a line to the log, such as before asking the user to reproduce a problem, "
+			+ "so the entries that follow are easy to find. Returns a cursor to pass as `after` "
+			+ "to get the entries logged since the mark.",
+		inputSchema: {
+			label: z.string().optional()
+				.describe('Text for the line, like "repro 2: open popup twice". Defaults to "mark".'),
+		},
+	},
+	async ({ label = "mark" }) => {
+		try {
+			await ensureDaemon();
+
+			const mark = await request("/mark", { label });
+
+			return textResult(
+				`Added ${formatEntry(mark)}`,
+				`cursor: ${mark.seq} (pass as \`after\` to get the entries logged since the mark)`,
+				getConnectionNote(mark)
 			);
 		} catch (error) {
 			return errorResult(error);

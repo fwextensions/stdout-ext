@@ -105,9 +105,15 @@ async function route(
 	}
 
 	if (method === "POST" && url === "/query") {
-		const { after, limit, filter } = await readJSON(req);
+		const { after, around, limit, filter } = await readJSON(req);
 
-		return { ...getStatus(), ...store.query({ after, limit, filter }) };
+		return { ...getStatus(), ...store.query({ after, around, limit, filter }) };
+	}
+
+	if (method === "POST" && url === "/mark") {
+		const { label } = await readJSON(req);
+
+		return { ...store.addMark(String(label)), ...getStatus() };
 	}
 
 	if (method === "POST" && url === "/wait") {

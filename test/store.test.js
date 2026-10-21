@@ -91,3 +91,66 @@ test("waits for a matching entry", async () => {
 	assert.equal(timedOut.timedOut, true);
 	assert.equal(store.waiters.size, 0);
 });
+
+test("renumbers entries and adds marks between them", () => {
+	const store = new LogStore();
+
+	store.ingest({ bufferId: "a", afterSeq: 0, entries: [entry(7), entry(8)] });
+
+	const mark = store.addMark("repro start");
+
+	assert.deepEqual(store.ingest({ bufferId: "a", afterSeq: 8, entries: [entry(9)] }), { maxSeq: 9 });
+	assert.equal(mark.seq, 3);
+	assert.deepEqual(store.entries.map(({ seq, text }) => [seq, text]),
+		[[1, "message 7"], [2, "message 8"], [3, "repro start"], [4, "message 9"]]);
+		// marks show up whatever the filter, but not as a source
+	assert.deepEqual(store.query({ filter: { search: "9" } }).entries.map(({ seq }) => seq), [3, 4]);
+	assert.equal(store.getSources()[0].count, 3);
+});
+
+test("doesn't end a wait with a mark", async () => {
+	const store = new LogStore();
+
+	store.ingest({ bufferId: "a", afterSeq: 0, entries: [entry(1)] });
+
+	const { promise } = store.wait({ filter: { search: "" }, timeoutMs: 1000 });
+
+	store.addMark("mark");
+	store.ingest({ bufferId: "a", afterSeq: 1, entries: [entry(2)] });
+	assert.deepEqual((await promise).entries.map(({ text }) => text), ["message 2"]);
+	assert.deepEqual((await store.wait({ after: 1, timeoutMs: 10 }).promise).entries.map(({ text }) => text),
+		["message 2"]);
+});
+
+test("flags the first entry from each page load", () => {
+	const store = new LogStore();
+
+	store.ingest({
+		bufferId: "a",
+		afterSeq: 0,
+		entries: [
+			entry(1, ["old lib"]),
+			entry(2, ["a1"], { loadId: "a" }),
+			entry(3, ["popup"], { loadId: "p", filename: "popup.html" }),
+			entry(4, ["a2"], { loadId: "a" }),
+			entry(5, ["b1"], { loadId: "b" }),
+		],
+	});
+	assert.deepEqual(store.entries.filter(({ newLoad }) => newLoad).map(({ text }) => text),
+		["a1", "popup", "b1"]);
+});
+
+test("filters by time and returns the entries around one", () => {
+	const store = new LogStore();
+
+	store.ingest({ bufferId: "a", afterSeq: 0, entries: [1, 2, 3, 4, 5, 6, 7, 8, 9].map((seq) => entry(seq)) });
+
+	const seqs = (query) => store.query(query).entries.map(({ seq }) => seq);
+
+	assert.deepEqual(seqs({ filter: { since: 1007 } }), [7, 8, 9]);
+	assert.deepEqual(seqs({ around: 5, limit: 5 }), [3, 4, 5, 6, 7]);
+	assert.deepEqual(seqs({ around: 2, limit: 5 }), [1, 2, 3, 4, 5]);
+	assert.deepEqual(seqs({ around: 9, limit: 5 }), [7, 8, 9]);
+		// the center entry is included even when it doesn't match
+	assert.deepEqual(seqs({ around: 5, limit: 5, filter: { search: "[2468]$" } }), [2, 4, 5, 6, 8]);
+});

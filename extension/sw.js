@@ -14,7 +14,7 @@ function handleMessage(
 	sender,
 	sendResponse)
 {
-	const { method, filename, args, time = Date.now(), name } = message;
+	const { method, filename, args, time = Date.now(), name, loadId } = message;
 
 	senderIDs.add(sender.id);
 
@@ -32,6 +32,7 @@ function handleMessage(
 		extensionId: sender.id,
 		extensionName: name,
 		filename,
+		loadId,
 		method,
 		args,
 	})

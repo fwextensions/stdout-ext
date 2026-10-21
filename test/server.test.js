@@ -30,7 +30,7 @@ async function callTool(
 	return result.content[0].text;
 }
 
-const entry = (seq, args, method = "log") => ({
+const entry = (seq, args, method = "log", extra = {}) => ({
 	seq,
 	time: Date.now(),
 	extensionId: "abcdefghijklmnopabcdefghijklmnop",
@@ -38,6 +38,7 @@ const entry = (seq, args, method = "log") => ({
 	filename: "sw.js",
 	method,
 	args,
+	...extra,
 });
 
 before(async () => {
@@ -62,7 +63,7 @@ after(async () => {
 test("lists the tools", async () => {
 	const { tools } = await client.listTools();
 
-	assert.deepEqual(tools.map(({ name }) => name).sort(), ["get_logs", "list_sources", "wait_for_log"]);
+	assert.deepEqual(tools.map(({ name }) => name).sort(), ["get_logs", "list_sources", "mark", "wait_for_log"]);
 });
 
 test("starts the daemon and reports that the extension hasn't connected", async () => {
@@ -105,7 +106,7 @@ test("returns ingested logs with a cursor", async () => {
 	const text = await callTool("get_logs");
 
 	assert.match(text, /#1 \S+ \[log\] Test Extension\/sw\.js: worker started/);
-	assert.match(text, /#2 \S+ \[error\] Test Extension\/sw\.js: request failed TypeError: boom\n {8}at foo/);
+	assert.match(text, /#2 \S+ \+\d+ms \[error\] Test Extension\/sw\.js: request failed TypeError: boom\n {8}at foo/);
 	assert.match(text, /cursor: 2/);
 	assert.doesNotMatch(text, /Note:/);
 	assert.match(await callTool("get_logs", { levels: ["error"] }), /^#2 /);
@@ -135,4 +136,26 @@ test("reports bad patterns as tool errors", async () => {
 
 	assert.equal(result.isError, true);
 	assert.match(result.content[0].text, /Invalid regular expression/);
+});
+
+test("marks the log and shows page loads and time deltas", async () => {
+	const time = Date.now();
+	const marked = await callTool("mark", { label: "repro start" });
+
+	assert.match(marked, /Added #5 \S+ --- mark: repro start ---/);
+	assert.match(marked, /cursor: 5/);
+	await ingest({
+		afterSeq: 4,
+		entries: [
+			{ ...entry(5, ["first"], "log", { loadId: "load1" }), time },
+			{ ...entry(6, ["second"], "log", { loadId: "load1" }), time: time + 1500 },
+		],
+	});
+
+	const text = await callTool("get_logs", { after: 5 });
+
+	assert.match(text, /^--- Test Extension\/sw\.js loaded ---\n#6 \S+ \[log\] .*first\n#7 \S+ \+1\.5s \[log\] .*second/);
+	assert.match(await callTool("get_logs", { around: 5, limit: 3 }), /^#4 .*\n#5 .*mark: repro start.*\n--- .*loaded ---\n#6 /);
+	assert.match(await callTool("get_logs", { since: "1m", search: "second" }), /#5 .*mark.*\n#7 /);
+	assert.equal((await client.callTool({ name: "get_logs", arguments: { since: "soon" } })).isError, true);
 });

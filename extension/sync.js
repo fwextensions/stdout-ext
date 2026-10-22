@@ -42,6 +42,8 @@ async function updateBadge(
 	await Promise.all([
 		chrome.action.setBadgeText({ text: agentMode ? "MCP" : "" }),
 		chrome.action.setBadgeBackgroundColor({ color: BadgeColors[status] }),
+			// Chrome picks black text for the gray background, which is hard to read
+		chrome.action.setBadgeTextColor({ color: "#fff" }),
 		chrome.action.setTitle({
 			title: !agentMode
 				? "stdout: click to let coding agents read the logs"

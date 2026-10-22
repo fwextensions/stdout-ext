@@ -2,8 +2,8 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
+import { Client } from "@modelcontextprotocol/client";
 import { getCodeVersion } from "../mcp/version.js";
 
 const port = 40000 + Math.floor(Math.random() * 10000);
@@ -33,7 +33,9 @@ test("replaces a daemon that was started from older code", async () => {
 
 	await once(oldDaemon.stdout, "data");
 
-	client = new Client({ name: "test", version: "1.0.0" });
+		// 2026-07-28 clients don't send an initialize request, which is when the
+		// daemon's code used to be checked
+	client = new Client({ name: "test", version: "1.0.0" }, { versionNegotiation: { mode: { pin: "2026-07-28" } } });
 	await client.connect(new StdioClientTransport({
 		command: process.execPath,
 		args: ["mcp/server.js"],

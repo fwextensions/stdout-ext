@@ -1,6 +1,8 @@
+// @ts-check
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { createMcpHandler } from "@modelcontextprotocol/server";
+import { toNodeHandler } from "@modelcontextprotocol/node";
 import { ExtensionOrigin, IdleTimeout, Port } from "./constants.js";
 import { LogStore } from "./store.js";
 import { createMcpServer } from "./tools.js";
@@ -58,6 +60,7 @@ function readJSON(
 	});
 }
 
+/** @returns {import("./tools.js").DaemonStatus} */
 function getStatus()
 {
 	return {
@@ -72,33 +75,9 @@ function getStatus()
 	};
 }
 
-async function handleMCP(
-	req,
-	res,
-	body)
-{
-		// each request gets its own server and transport, since the MCP servers
-		// relaying requests here don't keep a session.  the abort signal stops a
-		// wait_for_log when the agent session that called it goes away.
-	const controller = new AbortController();
-	const server = createMcpServer({ store, getStatus, signal: controller.signal });
-	const transport = new StreamableHTTPServerTransport({
-		sessionIdGenerator: undefined,
-		enableJsonResponse: true,
-	});
-
-	activeRequests++;
-	res.on("close", () => {
-		controller.abort();
-		transport.close();
-		server.close();
-		activeRequests--;
-		lastActivity = Date.now();
-	});
-
-	await server.connect(transport);
-	await transport.handleRequest(req, res, body);
-}
+	// each request gets its own server, since the 2026-07-28 protocol has no
+	// sessions.  requests from 2025-era clients are served the same way.
+const handleMCP = toNodeHandler(createMcpHandler(() => createMcpServer({ store, getStatus })));
 
 async function route(
 	req,
@@ -134,16 +113,17 @@ async function route(
 		return getStatus();
 	}
 
-	if (method === "POST" && url === "/mcp") {
-		await handleMCP(req, res, await readJSON(req));
+	if (url === "/mcp") {
+			// this also answers the GET and DELETE that 2025-era clients send for
+			// sessions with a 405
+		activeRequests++;
+		res.on("close", () => {
+			activeRequests--;
+			lastActivity = Date.now();
+		});
+		await handleMCP(req, res);
 
 		return Handled;
-	}
-
-	if (url === "/mcp") {
-			// without sessions, there's no stream of server messages to GET and no
-			// session to DELETE.  MCP clients expect a 405 for these.
-		throw new HTTPError(405, "Method not allowed");
 	}
 
 	throw new HTTPError(404, "Not found");
@@ -167,7 +147,7 @@ const server = createServer(async (req, res) => {
 	}
 });
 
-server.on("error", (error) => {
+server.on("error", (/** @type {NodeJS.ErrnoException} */ error) => {
 		// another copy of the daemon is already running, so let it handle things
 	process.exit(error.code === "EADDRINUSE" ? 0 : 1);
 });

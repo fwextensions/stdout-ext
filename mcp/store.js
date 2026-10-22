@@ -1,3 +1,4 @@
+// @ts-check
 import { formatArgs } from "./format.js";
 
 const DefaultMaxEntries = 20000;
@@ -12,6 +13,11 @@ const DefaultMaxEntries = 20000;
  * @property {number} [since]  Only include entries logged at or after this time.
  */
 
+/**
+ * @param {LogFilter} [filter]
+ * @param {boolean} [includeMarks]
+ * @returns {(entry: object) => boolean}
+ */
 function createMatcher(
 	{ levels, extension, filename, search, since } = {},
 	includeMarks = true)

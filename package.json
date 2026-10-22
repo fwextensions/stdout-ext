@@ -35,8 +35,9 @@
   },
   "scripts": {
     "build": "tsc",
+    "typecheck": "npm run build && tsc -p mcp",
     "test": "node --test",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run typecheck"
   },
   "bin": {
     "stdout-ext-mcp": "mcp/server.js"
@@ -45,10 +46,14 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@modelcontextprotocol/client": "^2.3.1",
+    "@modelcontextprotocol/node": "^2.1.1",
+    "@modelcontextprotocol/server": "^2.3.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@types/chrome": "^0.3.6",
+    "@types/node": "^20.19.43",
     "typescript": "^5.5.4"
   }
 }

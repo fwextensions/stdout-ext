@@ -1,3 +1,4 @@
+// @ts-check
 const SubstitutionPattern = /%([sdifoOcj%])/g;
 	// a separate non-global regex for testing, since test() on a global one is
 	// stateful

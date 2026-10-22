@@ -1,9 +1,13 @@
 {
   "compilerOptions": {
     "allowJs": true,
+    "checkJs": true,
     "declaration": true,
     "emitDeclarationOnly": true,
-    "outDir": "./types"
+    "outDir": "./types",
+    "target": "es2022",
+    "lib": ["es2022", "dom"],
+    "types": ["chrome"]
   },
   "include": ["./lib/**/*.js"]
 }

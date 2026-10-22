@@ -1,14 +1,15 @@
 import { request } from "node:http";
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
+import { Client } from "@modelcontextprotocol/client";
 import { STDOUT_ID } from "../lib/stdout.js";
 
 const port = 40000 + Math.floor(Math.random() * 10000);
 const baseURL = `http://127.0.0.1:${port}`;
 const extensionOrigin = `chrome-extension://${STDOUT_ID}`;
 let client;
+let legacyClient;
 
 function ingest(
 	body,
@@ -41,19 +42,29 @@ const entry = (seq, args, method = "log", extra = {}) => ({
 	...extra,
 });
 
-before(async () => {
-	client = new Client({ name: "test", version: "1.0.0" });
-	await client.connect(new StdioClientTransport({
+function connect(
+	options)
+{
+	const newClient = new Client({ name: "test", version: "1.0.0" }, options);
+
+	return newClient.connect(new StdioClientTransport({
 		command: process.execPath,
 		args: ["mcp/server.js"],
 		env: { ...process.env, STDOUT_MCP_PORT: String(port) },
-	}));
+	})).then(() => newClient);
+}
+
+before(async () => {
+	client = await connect({ versionNegotiation: { mode: { pin: "2026-07-28" } } });
+		// clients default to the 2025 protocol
+	legacyClient = await connect();
 });
 
 after(async () => {
 	const health = await fetch(`${baseURL}/health`).then((response) => response.json(), () => null);
 
 	await client.close();
+	await legacyClient.close();
 
 	if (health) {
 		process.kill(health.pid);
@@ -63,7 +74,17 @@ after(async () => {
 test("lists the tools", async () => {
 	const { tools } = await client.listTools();
 
+	assert.equal(client.getNegotiatedProtocolVersion(), "2026-07-28");
 	assert.deepEqual(tools.map(({ name }) => name).sort(), ["get_logs", "list_sources", "mark", "wait_for_log"]);
+});
+
+test("serves clients using the 2025 protocol", async () => {
+	const { tools } = await legacyClient.listTools();
+	const result = await legacyClient.callTool({ name: "list_sources", arguments: {} });
+
+	assert.equal(legacyClient.getNegotiatedProtocolVersion(), "2025-11-25");
+	assert.equal(tools.length, 4);
+	assert.match(result.content[0].text, /Log server started/);
 });
 
 test("starts the daemon and reports that the extension hasn't connected", async () => {

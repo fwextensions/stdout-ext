@@ -1,5 +1,20 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+// @ts-check
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
+
+/** @typedef {import("@modelcontextprotocol/server").CallToolResult} CallToolResult */
+
+/**
+ * @typedef {object} DaemonStatus
+ * @property {string} status
+ * @property {number} pid
+ * @property {string} bootId
+ * @property {string} codeVersion  Hash of the code the daemon was started from.
+ * @property {number} startedAt
+ * @property {number} lastIngestAt  When the stdout extension last sent entries, or 0.
+ * @property {number} maxSeq
+ * @property {number} entryCount
+ */
 
 	// the extension's alarm syncs once a minute while agent mode is on
 const SyncStaleTime = 150 * 1000;
@@ -184,6 +199,10 @@ function getConnectionNote(
 	return "";
 }
 
+/**
+ * @param {...(string|false|undefined)} parts  Falsy parts are left out.
+ * @returns {CallToolResult}
+ */
 function textResult(
 	...parts)
 {
@@ -192,6 +211,10 @@ function textResult(
 	};
 }
 
+/**
+ * @param {Error} error
+ * @returns {CallToolResult}
+ */
 function errorResult(
 	error)
 {
@@ -217,11 +240,11 @@ function validateSearch(
  * Create an MCP server whose tools read from the daemon's log store.  The
  * daemon creates one for each request, so they're cheap to make.
  *
- * @param {{ store: import("./store.js").LogStore, getStatus: () => object, signal?: AbortSignal }} options
+ * @param {{ store: import("./store.js").LogStore, getStatus: () => DaemonStatus }} options
  * @returns {McpServer}
  */
 export function createMcpServer(
-	{ store, getStatus, signal })
+	{ store, getStatus })
 {
 	const server = new McpServer(
 		{ name: "stdout-ext", version: "0.1.0" },
@@ -236,7 +259,7 @@ export function createMcpServer(
 				+ "including output from before this session started. Without `after`, returns the most "
 				+ "recent matching entries. With `after`, returns the entries following that cursor, "
 				+ "oldest first. With `around`, returns the entries before and after that one.",
-			inputSchema: {
+			inputSchema: z.object({
 				after: z.number().int().optional()
 					.describe("Cursor from a previous result. Only entries after it are returned."),
 				around: z.number().int().optional()
@@ -245,14 +268,16 @@ export function createMcpServer(
 				limit: z.number().int().min(1).max(1000).optional()
 					.describe("Maximum number of entries to return. Defaults to 100, or 21 with `around`."),
 				...filterShape,
-			},
+			}),
 			annotations: { readOnlyHint: true },
 		},
 		async ({ after, around, limit = around === undefined ? 100 : 21, since, ...filter }) => {
 			try {
 				validateSearch(filter.search);
-				filter.since = parseSince(since);
-				const result = { ...getStatus(), ...store.query({ after, around, limit, filter }) };
+				const result = {
+					...getStatus(),
+					...store.query({ after, around, limit, filter: { ...filter, since: parseSince(since) } }),
+				};
 				const { entries } = result;
 					// paging forward stops at the limit, so continue from the last entry.
 					// otherwise, every entry up to maxSeq has been considered.
@@ -282,7 +307,7 @@ export function createMcpServer(
 			description: "Wait until a Chrome extension logs a message matching a pattern, such as after "
 				+ "asking the user to reproduce a problem or reload the extension. By default, only "
 				+ "entries logged after this call starts are considered.",
-			inputSchema: {
+			inputSchema: z.object({
 				pattern: z.string()
 					.describe("Case-insensitive regular expression to match against the message text."),
 				after: z.number().int().optional()
@@ -292,10 +317,10 @@ export function createMcpServer(
 				levels: filterShape.levels,
 				extension: filterShape.extension,
 				filename: filterShape.filename,
-			},
+			}),
 			annotations: { readOnlyHint: true },
 		},
-		async ({ pattern, after, timeoutSeconds = 30, ...filter }) => {
+		async ({ pattern, after, timeoutSeconds = 30, ...filter }, ctx) => {
 			try {
 				validateSearch(pattern);
 				const { promise, cancel } = store.wait({
@@ -305,8 +330,9 @@ export function createMcpServer(
 					filter: { ...filter, search: pattern },
 				});
 
-					// stop waiting if the agent session that asked goes away
-				signal?.addEventListener("abort", cancel);
+					// stop waiting if the request is cancelled, or the agent session
+					// that asked goes away
+				ctx.mcpReq.signal.addEventListener("abort", cancel);
 
 				const result = { ...await promise, ...getStatus() };
 				const cursor = result.entries.at(-1)?.seq ?? result.maxSeq;
@@ -331,10 +357,10 @@ export function createMcpServer(
 			description: "Add a line to the log, such as before asking the user to reproduce a problem, "
 				+ "so the entries that follow are easy to find. Returns a cursor to pass as `after` "
 				+ "to get the entries logged since the mark.",
-			inputSchema: {
+			inputSchema: z.object({
 				label: z.string().optional()
 					.describe('Text for the line, like "repro 2: open popup twice". Defaults to "mark".'),
-			},
+			}),
 		},
 		async ({ label = "mark" }) => {
 			try {
@@ -357,7 +383,7 @@ export function createMcpServer(
 			title: "List log sources",
 			description: "List the Chrome extensions and pages that have sent logs, and whether the "
 				+ "stdout extension is currently connected.",
-			inputSchema: {},
+			inputSchema: z.object({}),
 			annotations: { readOnlyHint: true },
 		},
 		async () => {

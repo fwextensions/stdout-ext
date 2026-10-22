@@ -1,9 +1,10 @@
 #!/usr/bin/env node
+// @ts-check
 
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { BaseURL, Port } from "./constants.js";
 import { getCodeVersion } from "./version.js";
 
@@ -88,6 +89,7 @@ const agent = new StdioServerTransport();
 const daemon = new StreamableHTTPClientTransport(new URL(`${BaseURL}/mcp`));
 
 let ensuringDaemon = null;
+let checkingDaemon = null;
 
 function ensureDaemonOnce(
 	checkVersion)
@@ -99,12 +101,17 @@ function ensureDaemonOnce(
 
 agent.onmessage = async (message) => {
 	try {
-		if (message.method === "initialize") {
-				// only check the daemon's code when a session starts.  sessions that
-				// are already open will use whichever daemon is running, so they
-				// can't keep replacing one another's.
-			await ensureDaemonOnce(true);
-		}
+			// only check the daemon's code when this agent session sends its first
+			// message.  2026-07-28 clients don't send an initialize request, so
+			// that can't be used.  sessions that are already open will use
+			// whichever daemon is running, so they can't keep replacing one
+			// another's.
+		checkingDaemon ??= ensureDaemonOnce(true).catch((error) => {
+				// try again with the next message
+			checkingDaemon = null;
+			throw error;
+		});
+		await checkingDaemon;
 
 		try {
 			await daemon.send(message);

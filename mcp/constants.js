@@ -1,3 +1,4 @@
+// @ts-check
 import { STDOUT_ID } from "../lib/stdout.js";
 
 	// must match ServerURL in extension/sync.js
